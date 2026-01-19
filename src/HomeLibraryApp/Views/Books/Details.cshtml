@@ -1,0 +1,22 @@
+@model Book
+@{
+    ViewData["Title"] = "Детали книги";
+}
+
+<div class="container mt-4">
+    <h1>@Model.Title</h1>
+    <div class="card">
+        <div class="card-body">
+            <h5 class="card-title">@Model.Author</h5>
+            <p class="card-text"><strong>Год издания:</strong> @Model.PublicationYear</p>
+            
+            <h4 class="mt-4">Оглавление:</h4>
+            <pre class="bg-light p-3 rounded">@Model.ContentXML</pre>
+            
+            <div class="mt-4">
+                <a asp-action="EditContent" asp-route-id="@Model.Id" class="btn btn-warning">Редактировать XML</a>
+                <a asp-action="Index" class="btn btn-secondary">Назад к списку</a>
+            </div>
+        </div>
+    </div>
+</div>

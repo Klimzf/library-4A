@@ -1,0 +1,9 @@
+bin/
+obj/
+appsettings.*.json
+Properties/PublishProfiles/
+
+.vscode/
+
+.DS_Store
+Thumbs.db

@@ -1,0 +1,180 @@
+@model Book
+@{
+    ViewData["Title"] = "Редактировать оглавление";
+}
+
+<div class="container mt-4">
+    <div class="card">
+        <div class="card-header bg-primary text-white">
+            <h2 class="mb-0">Редактирование XML для "@Model.Title"</h2>
+        </div>
+        <div class="card-body">
+            <div class="alert alert-info mb-4">
+                <strong>Подсказка:</strong> Используйте структуру:
+                <pre class="mb-0 mt-2">@Html.Raw("&lt;Chapters&gt;\n  &lt;Chapter&gt;Название главы&lt;/Chapter&gt;\n&lt;/Chapters&gt;")</pre>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label fw-bold">Оглавление (XML)</label>
+                <div id="xml-editor-container" style="border: 1px solid #ddd; border-radius: 4px;"></div>
+                <textarea id="xml-content" name="ContentXML" class="d-none">@Html.Raw(Model.ContentXML)</textarea>
+                <div id="xml-error" class="text-danger mt-2" style="min-height: 24px;"></div>
+            </div>
+            
+            <div class="d-flex justify-content-between mt-4">
+                <a asp-action="Details" asp-route-id="@Model.Id" class="btn btn-secondary">
+                    <i class="bi bi-arrow-left"></i> Назад к деталям
+                </a>
+                <button id="save-btn" class="btn btn-success px-4">
+                    <i class="bi bi-save"></i> Сохранить изменения
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Styles {
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.14/codemirror.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.14/theme/dracula.min.css">
+    <style>
+        .CodeMirror {
+            height: 500px !important;
+            font-family: 'Consolas', 'Courier New', monospace;
+            font-size: 14px;
+        }
+    </style>
+}
+
+@section Scripts {
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.14/codemirror.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.14/mode/xml/xml.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.14/addon/fold/xml-fold.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.14/addon/display/autorefresh.min.js"></script>
+    
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+
+            const editor = CodeMirror(document.getElementById('xml-editor-container'), {
+                value: document.getElementById('xml-content').value,
+                mode: 'xml',
+                theme: 'dracula',
+                lineNumbers: true,
+                lineWrapping: true,
+                autoRefresh: true,
+                foldGutter: true,
+                gutters: ["CodeMirror-linenumbers", "CodeMirror-foldgutter"],
+                extraKeys: {
+                    "Tab": cm => {
+                        if (cm.somethingSelected()) {
+                            cm.indentSelection("add");
+                        } else {
+                            cm.replaceSelection("    ", "end", "+input");
+                        }
+                    }
+                }
+            });
+            
+            let validationTimeout;
+            editor.on('change', () => {
+                clearTimeout(validationTimeout);
+                validationTimeout = setTimeout(() => validateXml(editor), 500);
+            });
+            
+            document.getElementById('save-btn').addEventListener('click', async () => {
+                const xmlContent = editor.getValue();
+                const errorDiv = document.getElementById('xml-error');
+                
+                if (!validateXml(editor)) {
+                    errorDiv.textContent = 'Исправьте ошибки XML перед сохранением';
+                    errorDiv.classList.add('alert', 'alert-danger');
+                    return;
+                }
+                
+                const saveBtn = document.getElementById('save-btn');
+                const originalText = saveBtn.innerHTML;
+                saveBtn.disabled = true;
+                saveBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status"></span> Сохранение...';
+                
+                try {
+                    const response = await fetch(`/Books/EditContent/${@Model.Id}`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'RequestVerificationToken': getAntiForgeryToken()
+                        },
+                        body: JSON.stringify({ content: xmlContent })
+                    });
+                    
+                    const result = await response.json();
+                    
+                    if (result.success) {
+                        showValidationMessage(result.message, 'success');
+                        setTimeout(() => {
+                            window.location.href = `/Books/Details/${@Model.Id}`;
+                        }, 1500);
+                    } else {
+                        throw new Error(result.message);
+                    }
+                } catch (error) {
+                    showValidationMessage(`Ошибка сохранения: ${error.message}`, 'danger');
+                    saveBtn.disabled = false;
+                    saveBtn.innerHTML = originalText;
+                }
+            });
+            
+            function validateXml(editor) {
+                const xmlContent = editor.getValue().trim();
+                const errorDiv = document.getElementById('xml-error');
+                errorDiv.textContent = '';
+                errorDiv.className = 'mt-2';
+                
+                if (!xmlContent) {
+                    showValidationMessage('XML не может быть пустым', 'warning');
+                    return false;
+                }
+                
+                try {
+                    const parser = new DOMParser();
+                    const xmlDoc = parser.parseFromString(xmlContent, "application/xml");
+                    
+                    const parserError = xmlDoc.getElementsByTagName("parsererror")[0] || 
+                                      xmlDoc.querySelector("parsererror");
+                    
+                    if (parserError) {
+                        const errorText = parserError.textContent || 'Неверная структура XML';
+                        throw new Error(errorText);
+                    }
+                    
+                    if (xmlDoc.documentElement.nodeName === "parsererror") {
+                        throw new Error("Нет корневого элемента XML");
+                    }
+                    
+                    showValidationMessage('XML валиден', 'success');
+                    return true;
+                } catch (error) {
+                    showValidationMessage(`Ошибка XML: ${error.message}`, 'danger');
+                    return false;
+                }
+            }
+            
+            function showValidationMessage(message, type) {
+                const errorDiv = document.getElementById('xml-error');
+                errorDiv.textContent = message;
+                errorDiv.className = `mt-2 alert alert-${type}`;
+                
+                setTimeout(() => {
+                    if (errorDiv.textContent === message) {
+                        errorDiv.textContent = '';
+                        errorDiv.className = 'mt-2';
+                    }
+                }, 5000);
+            }
+            
+            function getAntiForgeryToken() {
+                return document.querySelector('input[name="__RequestVerificationToken"]').value;
+            }
+        });
+    </script>
+    
+    @Html.AntiForgeryToken()
+}
